@@ -1,16 +1,9 @@
-import { Navigation, WebView, useState, fetch } from 'scripting'
+import { Navigation, Script, WebView, VStack, Text, Button, useState, useMemo, useEffect, fetch } from 'scripting'
 import { html } from './ui'
 
-const controller = new WebViewController()
-let setReading: (value: boolean) => void = () => {}
-function App() {
-  const [reading, update] = useState(false)
-  setReading = update
-  return <WebView controller={controller} statusBarHidden={reading}
-    persistentSystemOverlays={reading ? 'hidden' : 'visible'}
-    ignoresSafeArea={reading ? true : false} />
-}
-await controller.addScriptMessageHandler('mange', async (p: {op: string, url?: string, referer?: string, value?: unknown}) => {
+type Message = { op: string, url?: string, referer?: string, value?: unknown }
+
+async function handleMessage(p: Message, setReading: (value: boolean) => void) {
   try {
     if (p.op === 'load') return { value: Storage.get('mange.v1') ?? null }
     if (p.op === 'save') {
@@ -33,8 +26,56 @@ await controller.addScriptMessageHandler('mange', async (p: {op: string, url?: s
     }
     throw new Error('未知操作')
   } catch (error) { return { error: String(error) } }
-})
-try {
-  if (!await controller.loadHTML(html, 'https://mange.local/')) throw new Error('界面加载失败')
-  await Navigation.present({ element: <App />, modalPresentationStyle: 'fullScreen' })
-} finally { controller.dispose(); Script.exit() }
+}
+
+function App() {
+  const controller = useMemo(() => new WebViewController(), [])
+  const [reading, setReading] = useState(false)
+  const [status, setStatus] = useState('正在启动 MANGE…')
+  const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    let active = true
+    let timer: ReturnType<typeof setTimeout> | undefined
+    async function initialize() {
+      try {
+        setStatus('正在启动 MANGE…')
+        timer = setTimeout(() => { if (active) setStatus('启动超时。请点重试；若仍失败，请将此提示发给开发者。') }, 15000)
+        await controller.addScriptMessageHandler('mange', p => handleMessage(p as Message, setReading))
+        await controller.addScriptMessageHandler('mangeStatus', (p: { error?: string }) => {
+          if (active) {
+            if (timer) clearTimeout(timer)
+            setStatus(p.error ? `启动失败：${p.error}` : '')
+          }
+          return true
+        })
+        if (!active) return
+        if (!await controller.loadHTML(html)) throw new Error('WebView 未能加载本地界面')
+      } catch (error) {
+        if (timer) clearTimeout(timer)
+        if (active) setStatus(`启动失败：${String(error)}`)
+      }
+    }
+    initialize()
+    return () => { active = false; if (timer) clearTimeout(timer) }
+  }, [attempt])
+  useEffect(() => () => controller.dispose(), [])
+  return <VStack spacing={0} statusBarHidden={reading}
+    persistentSystemOverlays={reading ? 'hidden' : 'visible'}
+    ignoresSafeArea={reading}>
+    {status ? <VStack padding={16}>
+      <Text>{status}</Text>
+      <Button title="重试启动" action={() => setAttempt(attempt + 1)} />
+    </VStack> : null}
+    <WebView controller={controller} frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }} />
+  </VStack>
+}
+
+async function main() {
+  try {
+    await Navigation.present({ element: <App />, modalPresentationStyle: 'fullScreen' })
+  } catch (error) {
+    console.error('MANGE startup:', String(error))
+    await Navigation.present({ element: <VStack padding={20}><Text>MANGE 启动失败：{String(error)}</Text></VStack> })
+  } finally { Script.exit() }
+}
+main()

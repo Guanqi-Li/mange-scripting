@@ -132,4 +132,14 @@ $('#sources').onchange=()=>{state.active=$('#sources').value;save()};$('#removeS
 $('#back').onclick=()=>{remember();home()};$('#prev').onclick=()=>run(()=>read(current-1));$('#next').onclick=()=>run(()=>read(current+1));$('#catalog').onclick=directory;
 $('#mode').onclick=()=>run(async()=>{remember();const p=state.progress[key(book)];state.mode=state.mode==='scroll'?'paged':'scroll';await save();await read(p.chapter,p.page,p.ratio)});
 $('#closeDirectory').onclick=()=>$('#directory').close();
-run(async()=>{state=await bridge('load')||{sources:[DEFAULT_SOURCE],active:DEFAULT_SOURCE.id,books:[],progress:{},mode:'scroll'};home()});
+(async()=>{
+  try {
+    state=await bridge('load')||{sources:[DEFAULT_SOURCE],active:DEFAULT_SOURCE.id,books:[],progress:{},mode:'scroll'};
+    home();
+    await window.webkit.messageHandlers.mangeStatus.postMessage({});
+  } catch(e) {
+    const error=String(e.message||e);
+    $('#notice').textContent='启动失败：'+error;
+    await window.webkit.messageHandlers.mangeStatus.postMessage({error});
+  }
+})();

@@ -16,6 +16,10 @@ https://raw.githubusercontent.com/Guanqi-Li/mange-scripting/main/dist/MANGE.zip
 
 导入源接受 GitHub blob 文件链接（常规分支名）及 Raw HTTPS JSON 链接；私有源仓库认证暂不支持。用户数据不会上传到 GitHub，Android 旧版阅读进度不会自动迁移。
 
+## 1.0.2 启动流程修复
+
+使用显式 async main 入口；先展示原生界面，再在挂载后加载 WebView。增加启动完成握手、超时提示、错误文字和重试入口，避免失败时只显示白屏。手机端实际原因需结合报错进一步确认。
+
 ## 1.0.1 导入修复
 
 补齐 Scripting `script.json` 元数据，生成与参考脚本相同根目录结构的专用 ZIP；原生宿主的 Storage 和 Script 使用全局 API，fetch 使用 Scripting 导出。此前仅改仓库可见性不足以修复缺失元数据造成的导入问题。
