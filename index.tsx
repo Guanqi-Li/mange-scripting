@@ -11,9 +11,9 @@ async function handleMessage(p: Message, setReading: (value: boolean) => void) {
       return { value: true }
     }
     if (p.op === 'reading') { setReading(Boolean(p.value)); return { value: true } }
-    if (p.op === 'fetch' || p.op === 'image') {
+    if (p.op === 'fetch' || p.op === 'document' || p.op === 'image') {
       if (!p.url || !/^https:\/\//i.test(p.url)) throw new Error('仅支持 HTTPS 地址')
-      const response = await fetch(p.url, { headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1', ...(p.referer ? { Referer: p.referer } : {}) } })
+      const response = await fetch(p.url, { headers: { 'User-Agent': 'Mange/1.0 (Android comic reader)', ...(p.referer ? { Referer: p.referer } : {}) } })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       if (p.op === 'image') {
         const data = await response.data()
@@ -21,6 +21,12 @@ async function handleMessage(p: Message, setReading: (value: boolean) => void) {
         const mime = (response.headers.get('content-type') || 'image/jpeg').split(';')[0]
         if (!/^image\/(jpeg|png|webp|gif|avif)$/.test(mime)) throw new Error('不支持的图片类型')
         return { value: `data:${mime};base64,${data.toBase64String()}` }
+      }
+      if (p.op === 'document') {
+        const data = await response.data()
+        if (data.size > 4 * 1024 * 1024) throw new Error('网页超过 4 MB')
+        const text = data.toRawString('utf-8') ?? data.toDecodedString('utf8')
+        return { value: { html: text, url: response.url || p.url, status: response.status } }
       }
       return { value: await response.text() }
     }

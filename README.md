@@ -16,6 +16,10 @@ https://raw.githubusercontent.com/Guanqi-Li/mange-scripting/main/dist/MANGE.zip
 
 导入源接受 GitHub blob 文件链接（常规分支名）及 Raw HTTPS JSON 链接；私有源仓库认证暂不支持。用户数据不会上传到 GitHub，Android 旧版阅读进度不会自动迁移。
 
+## 1.0.7 搜索迁移修正
+
+请求 User-Agent 与 Android 原项目保持一致；网页按原始字节读取并以 UTF-8 解码，再交给 DOMParser。瓜子源增加 JSON-LD 结果和语义链接回退，按 URL 去重。没有解析到结果时显示网页标题和可展开诊断，区分收到的页面与预期搜索页。已用当前实际返回页面验证普通 CSS 和移除卡片 class 后的结构化解析路径，均返回 2 项；Scripting 真机请求返回内容尚待确认。
+
 ## 1.0.5 顶部工具栏底色
 
 通过 EnvironmentValuesReader 读取实际明暗模式，将相同的明确色值传给导航栈、承载工具栏的内容视图、WebView 和网页。工具栏背景修饰符同时应用在实际提供按钮的内容视图上。网页跟随宿主主题，不再独立推断明暗模式。

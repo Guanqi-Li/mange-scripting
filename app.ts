@@ -17,7 +17,15 @@ let saves = Promise.resolve();
 const save = () => { const value = JSON.parse(JSON.stringify(state)); saves = saves.catch(()=>{}).then(()=>bridge('save',{value})); saves.catch(e=>{$('#notice').textContent=String(e)}); return saves; };
 const safeURL = (url, base) => { const u = new URL(url, base); if(u.protocol !== 'https:') throw Error('源中的链接必须使用 HTTPS'); return u.href; };
 const source = id => { const s = state.sources.find(s=>s.id===id); if(!s) throw Error('请重新导入此漫画的源'); return s; };
-const doc = async url => new DOMParser().parseFromString(await bridge('fetch',{url}), 'text/html');
+const doc = async url => {
+  const response=await bridge('document',{url});
+  const text=typeof response==='string'?response:response?.html;
+  if(typeof text!=='string'||!text.trim())throw Error('服务器返回了空网页');
+  const d=new DOMParser().parseFromString(text.replace(/^\uFEFF/,''),'text/html');
+  d.mangeURL=typeof response==='string'?url:response.url||url;
+  d.mangeSize=text.length;
+  return d;
+};
 const pick = (e, selector) => selector === ':scope' ? e : e.querySelector(selector);
 const attr = (e,s,a) => pick(e,s)?.getAttribute(a) || '';
 function validate(s) {
@@ -61,13 +69,47 @@ async function search() {
   let d;
   try { d=await doc(url); } catch(e) { if(id===token){$('#heading').textContent='搜索失败';$('#notice').textContent=s.name+'：'+String(e.message||e);}return; }
   if(id!==token)return;
-  for(const e of d.querySelectorAll(s.search.items)) {
-    const title=pick(e,s.search.title)?.textContent.trim(), link=attr(e,s.search.link,s.search.linkAttr||'href');
-    if(title&&link)card({source:s.id,title,url:safeURL(link,url),cover:safeURL(attr(e,s.search.cover,s.search.coverAttr||'src'),url)},false);
+  const seen=new Set();
+  const add=(title,link,cover)=>{
+    if(!title||!link)return;
+    const resolved=safeURL(link,d.mangeURL||url);
+    if(seen.has(resolved))return;seen.add(resolved);
+    card({source:s.id,title,url:resolved,cover:cover?safeURL(cover,d.mangeURL||url):''},false);
+  };
+  const matched=d.querySelectorAll(s.search.items);
+  for(const e of matched) {
+    add(pick(e,s.search.title)?.textContent.trim(),attr(e,s.search.link,s.search.linkAttr||'href'),attr(e,s.search.cover,s.search.coverAttr||'src'));
   }
-  const count=$('#content').children.length;
-  $('#heading').textContent=count?'搜索结果':'没有找到漫画';
-  if(!count) $('#notice').textContent=/captcha|cloudflare|验证|Just a moment/i.test(d.title+' '+d.body.textContent.slice(0,1200))?'网站返回了验证页面，当前无法搜索。':s.name+'没有返回可解析的结果，请尝试“一人之下”；若仍为空，可能是网站规则或访问限制。';
+  // Guazi exposes the same search results as structured data and semantic links.
+  if(!seen.size&&s.id==='guazi'&&s.baseUrl===DEFAULT_SOURCE.baseUrl){
+    const visit=node=>{
+      if(!node||typeof node!=='object')return;
+      if(Array.isArray(node)){node.forEach(visit);return}
+      if(node['@type']==='ListItem'){
+        const item=node.item||node;
+        const title=item.name||node.name,link=item.url||node.url;
+        if(title&&link&&new URL(link,url).pathname==='/comic.php'){
+          const a=Array.from(d.querySelectorAll('a[href]')).find(a=>{try{return safeURL(a.getAttribute('href'),url)===safeURL(link,url)}catch{return false}});
+          add(title,link,a?.querySelector('img')?.getAttribute('src')||'');
+        }
+      }
+      if(node.mainEntity)visit(node.mainEntity);if(node.itemListElement)visit(node.itemListElement);if(node['@graph'])visit(node['@graph']);
+    };
+    for(const e of d.querySelectorAll('script[type="application/ld+json"]')){try{visit(JSON.parse(e.textContent))}catch{}}
+    if(!seen.size)for(const a of d.querySelectorAll('h3 a[href],a[title][href]')){
+      const link=a.getAttribute('href');if(new URL(link,url).pathname!=='/comic.php')continue;
+      const parent=a.closest('article')||a.parentElement;
+      add(a.textContent.trim()||a.title,link,parent.querySelector('img')?.getAttribute('src')||'');
+    }
+  }
+  const count=seen.size;
+  $('#heading').textContent=count?'搜索结果':'搜索未成功';
+  if(!count){
+    $('#notice').textContent='收到网页，但未提取到漫画。页面标题：'+(d.title||'（无标题）');
+    const details=el('details'),summary=el('summary','查看搜索诊断');
+    details.append(summary,el('p','源：'+s.name+'；匹配条目：'+matched.length+'；网页长度：'+d.mangeSize),el('p','请求：'+url),el('p','实际地址：'+d.mangeURL),el('p',(d.body?.textContent||'').replace(/\s+/g,' ').trim().slice(0,220)));
+    $('#content').append(details);
+  }
 }
 async function openBook(b,resume) {
   const id=++token,s=source(b.source); $('#heading').textContent='正在读取目录…';
