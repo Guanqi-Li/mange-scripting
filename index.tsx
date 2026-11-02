@@ -69,9 +69,12 @@ function App() {
         }).catch(error => setStatus(`最小化失败：${String(error)}`))
       }} /> : undefined
   }
-  return <NavigationStack background="systemGroupedBackground" statusBarHidden={reading}
+  return <NavigationStack background={{ style: reading ? 'black' : 'systemGroupedBackground', shape: 'rect' }}
+    toolbarBackground={{ style: 'systemGroupedBackground', bars: ['navigationBar'] }}
+    toolbarBackgroundVisibility={{ visibility: 'visible', bars: ['navigationBar'] }}
+    statusBarHidden={reading}
     persistentSystemOverlays={reading ? 'hidden' : 'visible'}>
-  <VStack spacing={0} navigationTitle="MANGE" navigationBarTitleDisplayMode="inline"
+  <VStack spacing={0} background={{ style: reading ? 'black' : 'systemGroupedBackground', shape: 'rect' }} navigationTitle="MANGE" navigationBarTitleDisplayMode="inline"
     toolbar={reading ? undefined : toolbar}
     toolbarVisibility={{ visibility: reading ? 'hidden' : 'visible', bars: ['navigationBar'] }}
     statusBarHidden={reading}
@@ -81,7 +84,7 @@ function App() {
       <Text>{status}</Text>
       <Button title="重试启动" action={() => setAttempt(attempt + 1)} />
     </VStack> : null}
-    <WebView controller={controller} frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }} />
+    <WebView controller={controller} background={reading ? 'black' : 'systemGroupedBackground'} frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }} />
   </VStack>
   </NavigationStack>
 }

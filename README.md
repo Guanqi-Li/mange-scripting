@@ -16,6 +16,10 @@ https://raw.githubusercontent.com/Guanqi-Li/mange-scripting/main/dist/MANGE.zip
 
 导入源接受 GitHub blob 文件链接（常规分支名）及 Raw HTTPS JSON 链接；私有源仓库认证暂不支持。用户数据不会上传到 GitHub，Android 旧版阅读进度不会自动迁移。
 
+## 1.0.4 统一底色
+
+导航栏明确使用 systemGroupedBackground，并固定显示该背景；原生容器、WebView 和网页主体同步使用系统分组底色。浅色为 #f2f2f7，深色为黑色；阅读区保持黑色。
+
 ## 1.0.3 窗口控制与 iOS 样式
 
 参照 JM 使用原生 NavigationStack 工具栏：左侧退出，右侧最小化；最小化调用 Script.minimize，保留运行实例。主界面使用系统导航栏与 SF Symbols，网页内容调整为系统分组底色、蓝色主操作、胶囊控件、圆角列表，跟随系统明暗模式。阅读时隐藏原生导航栏，返回主界面后恢复退出与最小化按钮。最小化按钮仅在宿主支持时显示，失败显示提示。
