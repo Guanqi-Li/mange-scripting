@@ -1,0 +1,26 @@
+{
+  "id": "guazi",
+  "name": "瓜子漫画",
+  "kind": "html",
+  "baseUrl": "https://www.guazimanhua.com",
+  "search": {
+    "url": "/category.php?keyword={query}",
+    "browseUrl": "/",
+    "items": "article.card, article.comic-card",
+    "title": "h3",
+    "link": "a[href^=\"/comic.php\"]",
+    "cover": "img.cover",
+    "coverAttr": "src"
+  },
+  "detail": {
+    "chapters": "[data-chapter-list] a[href^=\"/chapter.php\"]",
+    "title": ":scope",
+    "link": ":scope",
+    "reverse": true,
+    "cover": "img.cinema-cover"
+  },
+  "reader": {
+    "images": "[data-reader-images] img.reading-image",
+    "imageAttr": "src"
+  }
+}
