@@ -1,11 +1,17 @@
 // Browser UI, bundled into ui.ts by tools/build.py. No remote scripts execute.
 const bridge = async (op, extra = {}) => {
   let timer;
-  const reply = await Promise.race([
+  let reply = await Promise.race([
     window.webkit.messageHandlers.mange.postMessage({op, ...extra}),
     new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('请求超时，请检查网络是否能访问漫画源网站')),25000))
   ]).finally(()=>clearTimeout(timer));
-  if (reply.error) throw Error(reply.error); return reply.value;
+  for(let i=0;i<2&&typeof reply==='string';i++){
+    try { reply=JSON.parse(reply); } catch { throw Error('脚本通信返回了非 JSON 数据（'+op+'）'); }
+  }
+  if(!reply||typeof reply!=='object')throw Error('脚本通信返回格式异常（'+op+'）：'+typeof reply);
+  if (reply.error) throw Error(reply.error);
+  if(!Object.prototype.hasOwnProperty.call(reply,'value'))throw Error('脚本通信缺少结果字段（'+op+'）');
+  return reply.value;
 };
 const $ = s => document.querySelector(s);
 const el = (tag, text, cls) => { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; };
@@ -20,7 +26,8 @@ const source = id => { const s = state.sources.find(s=>s.id===id); if(!s) throw 
 const doc = async url => {
   const response=await bridge('document',{url});
   const text=typeof response==='string'?response:response?.html;
-  if(typeof text!=='string'||!text.trim())throw Error('服务器返回了空网页');
+  if(typeof text!=='string')throw Error('网页在脚本通信中丢失，返回类型：'+typeof response+'，字段：'+Object.keys(response||{}).join(','));
+  if(!text.trim())throw Error('收到的网页内容为空');
   const d=new DOMParser().parseFromString(text.replace(/^\uFEFF/,''),'text/html');
   d.mangeURL=typeof response==='string'?url:response.url||url;
   d.mangeSize=text.length;

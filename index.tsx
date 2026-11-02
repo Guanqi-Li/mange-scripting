@@ -26,6 +26,8 @@ async function handleMessage(p: Message, setReading: (value: boolean) => void) {
         const data = await response.data()
         if (data.size > 4 * 1024 * 1024) throw new Error('网页超过 4 MB')
         const text = data.toRawString('utf-8') ?? data.toDecodedString('utf8')
+        if (typeof text !== 'string') throw new Error(`网页解码失败，HTTP ${response.status}，字节数 ${data.size}`)
+        if (!text.trim()) throw new Error(`网站实际返回空内容，HTTP ${response.status}，字节数 ${data.size}`)
         return { value: { html: text, url: response.url || p.url, status: response.status } }
       }
       return { value: await response.text() }
@@ -47,7 +49,7 @@ function App({ scheme }: { scheme: string }) {
       try {
         setStatus('正在启动 MANGE…')
         timer = setTimeout(() => { if (active) setStatus('启动超时。请点重试；若仍失败，请将此提示发给开发者。') }, 15000)
-        await controller.addScriptMessageHandler('mange', p => handleMessage(p as Message, setReading))
+        await controller.addScriptMessageHandler('mange', async p => JSON.stringify(await handleMessage(p as Message, setReading)))
         await controller.addScriptMessageHandler('mangeStatus', (p: { error?: string }) => {
           if (active) {
             if (timer) clearTimeout(timer)

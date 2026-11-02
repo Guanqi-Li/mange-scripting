@@ -16,6 +16,10 @@ https://raw.githubusercontent.com/Guanqi-Li/mange-scripting/main/dist/MANGE.zip
 
 导入源接受 GitHub blob 文件链接（常规分支名）及 Raw HTTPS JSON 链接；私有源仓库认证暂不支持。用户数据不会上传到 GitHub，Android 旧版阅读进度不会自动迁移。
 
+## 1.0.8 桥接结果校验
+
+原生消息处理器明确返回 JSON 字符串，网页端解码并校验结果信封，不再默默把缺少 value 或 html 当成空网页。原生网络层在传递前检查真实内容与字节数，错误区分解码失败、真正空响应和通信字段缺失。
+
 ## 1.0.7 搜索迁移修正
 
 请求 User-Agent 与 Android 原项目保持一致；网页按原始字节读取并以 UTF-8 解码，再交给 DOMParser。瓜子源增加 JSON-LD 结果和语义链接回退，按 URL 去重。没有解析到结果时显示网页标题和可展开诊断，区分收到的页面与预期搜索页。已用当前实际返回页面验证普通 CSS 和移除卡片 class 后的结构化解析路径，均返回 2 项；Scripting 真机请求返回内容尚待确认。
