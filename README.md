@@ -16,6 +16,10 @@ https://raw.githubusercontent.com/Guanqi-Li/mange-scripting/main/dist/MANGE.zip
 
 导入源接受 GitHub blob 文件链接（常规分支名）及 Raw HTTPS JSON 链接；私有源仓库认证暂不支持。用户数据不会上传到 GitHub，Android 旧版阅读进度不会自动迁移。
 
+## 1.0.10 阅读布局
+
+阅读状态直接返回全屏内容，不再嵌在主界面的 NavigationStack 中；WebView 与阅读容器同时忽略安全区，隐藏状态栏与系统覆盖层。逐页模式使用至少一屏高的容器居中短图，超过一屏的长图按实际高度展开并可纵向滚动；连续模式不增加图片间距。
+
 ## 1.0.9 显式回调通道
 
 网页用请求编号登记等待项，原生通过 evaluateJavaScript 调用 __mangeReply 回传结果。postMessage 的返回值只作为发送确认，不再作为业务结果。并发请求按编号匹配；失败、超时和迟到回调都会清理对应等待项。

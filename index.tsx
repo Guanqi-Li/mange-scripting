@@ -93,12 +93,7 @@ function App({ scheme }: { scheme: string }) {
         }).catch(error => setStatus(`最小化失败：${String(error)}`))
       }} /> : undefined
   }
-  return <NavigationStack background={{ style: reading ? '#000000' : surface, shape: 'rect' }}
-    toolbarBackground={{ style: surface, bars: ['navigationBar'] }}
-    toolbarBackgroundVisibility={{ visibility: 'visible', bars: ['navigationBar'] }}
-    statusBarHidden={reading}
-    persistentSystemOverlays={reading ? 'hidden' : 'visible'}>
-  <VStack spacing={0} background={{ style: reading ? '#000000' : surface, shape: 'rect' }} navigationTitle="MANGE" navigationBarTitleDisplayMode="inline"
+  const content = <VStack spacing={0} background={{ style: reading ? '#000000' : surface, shape: 'rect' }} navigationTitle="MANGE" navigationBarTitleDisplayMode="inline"
     toolbar={reading ? undefined : toolbar}
     toolbarBackground={{ style: surface, bars: ['navigationBar'] }}
     toolbarBackgroundVisibility={{ visibility: 'visible', bars: ['navigationBar'] }}
@@ -110,8 +105,14 @@ function App({ scheme }: { scheme: string }) {
       <Text>{status}</Text>
       <Button title="重试启动" action={() => setAttempt(attempt + 1)} />
     </VStack> : null}
-    <WebView controller={controller} background={reading ? '#000000' : surface} frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }} />
+    <WebView controller={controller} ignoresSafeArea={reading} background={reading ? '#000000' : surface} frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }} />
   </VStack>
+  // The reader must not inherit navigation-stack layout or its reserved safe areas.
+  if (reading) return content
+  return <NavigationStack background={{ style: surface, shape: 'rect' }}
+    toolbarBackground={{ style: surface, bars: ['navigationBar'] }}
+    toolbarBackgroundVisibility={{ visibility: 'visible', bars: ['navigationBar'] }}>
+    {content}
   </NavigationStack>
 }
 

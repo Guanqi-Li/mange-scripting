@@ -28,4 +28,10 @@ dialog{background:var(--bg);color:var(--ink);border-radius:28px;box-shadow:0 20p
 /* Native host is the single authority for navigation and document surfaces. */
 html[data-native-theme="light"]{color-scheme:light;--bg:#f2f2f7;--ink:#1c1c1e;--surface:rgba(255,255,255,.82);--field:rgba(118,118,128,.12);--line:rgba(60,60,67,.12);--accent:#007aff;--secondary:#6c6c70}
 html[data-native-theme="dark"]{color-scheme:dark;--bg:#000;--ink:#f2f2f7;--surface:rgba(44,44,46,.88);--field:rgba(118,118,128,.25);--line:rgba(84,84,88,.65);--accent:#0a84ff;--secondary:#98989f}
+
+#reader{width:100%;height:100%;height:100dvh}#viewport{width:100%;height:100%;padding:0;margin:0}
+#reader[data-mode="paged"] #pages{min-height:100%}
+#reader[data-mode="paged"] .page{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;width:100%}
+#reader[data-mode="paged"] .page img{flex:0 0 auto;width:100%;height:auto;margin:0 auto}
+#tail:empty{display:none}
 </style></head><body><section id="home"><header><form id="queryform"><input id="query" placeholder="搜索漫画" enterkeyhint="search" aria-label="搜索漫画"><button>搜索</button></form><nav><select id="sources" aria-label="当前源"></select><button id="import">导入源</button><button id="removeSource">删除源</button><button id="shelf">书架</button></nav></header><p id="notice" role="alert"></p><h2 id="heading">书架</h2><main id="content"></main></section><section id="reader" hidden><div id="viewport"><div id="pages"></div><div id="tail"></div></div><div id="top" hidden><button id="back">返回</button><span id="title"></span></div><div id="bottom" hidden><button id="prev">上一章</button><button id="catalog">目录</button><button id="mode">切换模式</button><button id="next">下一章</button></div></section><dialog id="directory"><button id="closeDirectory">关闭目录</button><div id="chapterlist"></div></dialog><script>__APP__</script></body></html>

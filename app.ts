@@ -148,7 +148,7 @@ async function chapterImages(index) {
 async function read(index,p=0,ratio=0) {
   if(index<0||index>=book.chapters.length)return;
   const id=++token;loading=true;current=index;page=p;pages=[];restore={p,ratio};
-  $('#home').hidden=true;$('#reader').hidden=false;$('#pages').replaceChildren();$('#tail').textContent='正在加载…';
+  $('#home').hidden=true;$('#reader').hidden=false;$('#reader').dataset.mode=state.mode;$('#pages').replaceChildren();$('#tail').textContent='正在加载…';
   controls=false;bars();await bridge('reading',{value:true});
   try { const urls=await chapterImages(index);if(id!==token)return; append(urls,index);pages.slice(0,p+1).forEach(e=>e.img.loading='eager');if(state.mode==='paged')showPage(p);else restorePosition();$('#tail').textContent=''; }
   catch(e){if(id===token){$('#tail').replaceChildren(button('加载失败，点击重试',()=>read(index,p,ratio)));throw e}}
