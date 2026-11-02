@@ -1,4 +1,4 @@
-import { Navigation, Script, WebView, VStack, Text, Button, useState, useMemo, useEffect, fetch } from 'scripting'
+import { Navigation, NavigationStack, Script, WebView, VStack, Text, Button, useState, useMemo, useEffect, fetch } from 'scripting'
 import { html } from './ui'
 
 type Message = { op: string, url?: string, referer?: string, value?: unknown }
@@ -59,7 +59,22 @@ function App() {
     return () => { active = false; if (timer) clearTimeout(timer) }
   }, [attempt])
   useEffect(() => () => controller.dispose(), [])
-  return <VStack spacing={0} statusBarHidden={reading}
+  const toolbar = {
+    cancellationAction: <Button title="退出" systemImage="xmark" action={() => Script.exit()} />,
+    primaryAction: Script.supportsMinimization() ? <Button title="最小化"
+      systemImage="arrow.down.right.and.arrow.up.left"
+      action={() => {
+        Script.minimize().then(success => {
+          if (!success) setStatus('当前环境无法最小化，请稍后重试。')
+        }).catch(error => setStatus(`最小化失败：${String(error)}`))
+      }} /> : undefined
+  }
+  return <NavigationStack background="systemGroupedBackground" statusBarHidden={reading}
+    persistentSystemOverlays={reading ? 'hidden' : 'visible'}>
+  <VStack spacing={0} navigationTitle="MANGE" navigationBarTitleDisplayMode="inline"
+    toolbar={reading ? undefined : toolbar}
+    toolbarVisibility={{ visibility: reading ? 'hidden' : 'visible', bars: ['navigationBar'] }}
+    statusBarHidden={reading}
     persistentSystemOverlays={reading ? 'hidden' : 'visible'}
     ignoresSafeArea={reading}>
     {status ? <VStack padding={16}>
@@ -68,6 +83,7 @@ function App() {
     </VStack> : null}
     <WebView controller={controller} frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }} />
   </VStack>
+  </NavigationStack>
 }
 
 async function main() {
