@@ -1,18 +1,29 @@
 // Browser UI, bundled into ui.ts by tools/build.py. No remote scripts execute.
-const bridge = async (op, extra = {}) => {
-  let timer;
-  let reply = await Promise.race([
-    window.webkit.messageHandlers.mange.postMessage({op, ...extra}),
-    new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('请求超时，请检查网络是否能访问漫画源网站')),25000))
-  ]).finally(()=>clearTimeout(timer));
-  for(let i=0;i<2&&typeof reply==='string';i++){
-    try { reply=JSON.parse(reply); } catch { throw Error('脚本通信返回了非 JSON 数据（'+op+'）'); }
-  }
-  if(!reply||typeof reply!=='object')throw Error('脚本通信返回格式异常（'+op+'）：'+typeof reply);
-  if (reply.error) throw Error(reply.error);
-  if(!Object.prototype.hasOwnProperty.call(reply,'value'))throw Error('脚本通信缺少结果字段（'+op+'）');
-  return reply.value;
+const pendingRequests = new Map();
+let requestSequence = 0;
+window.__mangeReply = (id, reply) => {
+  const pending = pendingRequests.get(id);
+  if (!pending) return;
+  pendingRequests.delete(id); clearTimeout(pending.timer);
+  if (!reply || typeof reply !== 'object') return pending.reject(Error('脚本回调格式异常'));
+  if (reply.error) return pending.reject(Error(reply.error));
+  if (!Object.prototype.hasOwnProperty.call(reply, 'value')) return pending.reject(Error('脚本回调缺少结果'));
+  pending.resolve(reply.value);
 };
+const bridge = (op, extra = {}) => new Promise((resolve, reject) => {
+  const id = 'mange-' + (++requestSequence);
+  const fail = error => {
+    const pending = pendingRequests.get(id); if (!pending) return;
+    clearTimeout(pending.timer); pendingRequests.delete(id); reject(error);
+  };
+  const timer = setTimeout(() => fail(Error('请求超时（'+op+'），原生脚本尚未返回处理结果')), 25000);
+  pendingRequests.set(id, {resolve, reject, timer});
+  try {
+    // Delivery acknowledgement is not the operation result. Only __mangeReply resolves this request.
+    const delivery = window.webkit.messageHandlers.mange.postMessage({id, op, ...extra});
+    if (delivery && typeof delivery.catch === 'function') delivery.catch(fail);
+  } catch (error) { fail(error); }
+});
 const $ = s => document.querySelector(s);
 const el = (tag, text, cls) => { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; };
 const button = (text, fn) => { const e = el('button', text); e.onclick = () => run(fn); return e; };

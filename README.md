@@ -16,6 +16,10 @@ https://raw.githubusercontent.com/Guanqi-Li/mange-scripting/main/dist/MANGE.zip
 
 导入源接受 GitHub blob 文件链接（常规分支名）及 Raw HTTPS JSON 链接；私有源仓库认证暂不支持。用户数据不会上传到 GitHub，Android 旧版阅读进度不会自动迁移。
 
+## 1.0.9 显式回调通道
+
+网页用请求编号登记等待项，原生通过 evaluateJavaScript 调用 __mangeReply 回传结果。postMessage 的返回值只作为发送确认，不再作为业务结果。并发请求按编号匹配；失败、超时和迟到回调都会清理对应等待项。
+
 ## 1.0.8 桥接结果校验
 
 原生消息处理器明确返回 JSON 字符串，网页端解码并校验结果信封，不再默默把缺少 value 或 html 当成空网页。原生网络层在传递前检查真实内容与字节数，错误区分解码失败、真正空响应和通信字段缺失。

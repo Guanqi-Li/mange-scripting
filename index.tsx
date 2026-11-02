@@ -1,7 +1,7 @@
 import { Navigation, NavigationStack, EnvironmentValuesReader, Script, WebView, VStack, Text, Button, useState, useMemo, useEffect, fetch } from 'scripting'
 import { html } from './ui'
 
-type Message = { op: string, url?: string, referer?: string, value?: unknown }
+type Message = { id?: string, op: string, url?: string, referer?: string, value?: unknown }
 
 async function handleMessage(p: Message, setReading: (value: boolean) => void) {
   try {
@@ -49,7 +49,19 @@ function App({ scheme }: { scheme: string }) {
       try {
         setStatus('正在启动 MANGE…')
         timer = setTimeout(() => { if (active) setStatus('启动超时。请点重试；若仍失败，请将此提示发给开发者。') }, 15000)
-        await controller.addScriptMessageHandler('mange', async p => JSON.stringify(await handleMessage(p as Message, setReading)))
+        await controller.addScriptMessageHandler('mange', async incoming => {
+          const p = (typeof incoming === 'string' ? JSON.parse(incoming) : incoming) as Message
+          if (!p || typeof p.id !== 'string') throw new Error('脚本请求缺少编号')
+          const result = await handleMessage(p, setReading)
+          if (active) {
+            try {
+              await controller.evaluateJavaScript(`window.__mangeReply(${JSON.stringify(p.id)}, ${JSON.stringify(result)}); return true`)
+            } catch (error) {
+              setStatus(`通信回调失败：${String(error)}`)
+            }
+          }
+          return true
+        })
         await controller.addScriptMessageHandler('mangeStatus', (p: { error?: string }) => {
           if (active) {
             if (timer) clearTimeout(timer)
