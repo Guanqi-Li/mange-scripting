@@ -13,7 +13,7 @@ async function handleMessage(p: Message, setReading: (value: boolean) => void) {
     if (p.op === 'reading') { setReading(Boolean(p.value)); return { value: true } }
     if (p.op === 'fetch' || p.op === 'image') {
       if (!p.url || !/^https:\/\//i.test(p.url)) throw new Error('仅支持 HTTPS 地址')
-      const response = await fetch(p.url, { headers: p.referer ? { Referer: p.referer } : {} })
+      const response = await fetch(p.url, { headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1', ...(p.referer ? { Referer: p.referer } : {}) } })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       if (p.op === 'image') {
         const data = await response.data()

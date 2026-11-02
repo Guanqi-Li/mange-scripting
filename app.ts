@@ -1,12 +1,16 @@
 // Browser UI, bundled into ui.ts by tools/build.py. No remote scripts execute.
 const bridge = async (op, extra = {}) => {
-  const reply = await window.webkit.messageHandlers.mange.postMessage({op, ...extra});
+  let timer;
+  const reply = await Promise.race([
+    window.webkit.messageHandlers.mange.postMessage({op, ...extra}),
+    new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('请求超时，请检查网络是否能访问漫画源网站')),25000))
+  ]).finally(()=>clearTimeout(timer));
   if (reply.error) throw Error(reply.error); return reply.value;
 };
 const $ = s => document.querySelector(s);
 const el = (tag, text, cls) => { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; };
 const button = (text, fn) => { const e = el('button', text); e.onclick = () => run(fn); return e; };
-const run = async fn => { try { await fn(); } catch(e) { alert(String(e.message || e)); } };
+const run = async fn => { try { await fn(); } catch(e) { $('#notice').textContent=String(e.message || e); } };
 const key = b => b.source + '|' + b.url;
 let state, book, current = 0, page = 0, token = 0, pages = [], loading = false, controls = false, restore = null;
 let saves = Promise.resolve();
@@ -52,14 +56,18 @@ function card(b,shelf) {
 }
 async function search() {
   const id=++token,s=source(state.active), q=$('#query').value.trim();
-  $('#heading').textContent='搜索中…'; $('#content').replaceChildren();
+  $('#notice').textContent=''; $('#heading').textContent='搜索中…'; $('#content').replaceChildren();
   const url=safeURL(q?s.search.url.replaceAll('{query}',encodeURIComponent(q)):s.search.browseUrl||s.search.url.replaceAll('{query}',''),s.baseUrl);
-  const d=await doc(url); if(id!==token)return;
+  let d;
+  try { d=await doc(url); } catch(e) { if(id===token){$('#heading').textContent='搜索失败';$('#notice').textContent=s.name+'：'+String(e.message||e);}return; }
+  if(id!==token)return;
   for(const e of d.querySelectorAll(s.search.items)) {
     const title=pick(e,s.search.title)?.textContent.trim(), link=attr(e,s.search.link,s.search.linkAttr||'href');
     if(title&&link)card({source:s.id,title,url:safeURL(link,url),cover:safeURL(attr(e,s.search.cover,s.search.coverAttr||'src'),url)},false);
   }
-  $('#heading').textContent=$('#content').children.length?'搜索结果':'没有找到漫画';
+  const count=$('#content').children.length;
+  $('#heading').textContent=count?'搜索结果':'没有找到漫画';
+  if(!count) $('#notice').textContent=/captcha|cloudflare|验证|Just a moment/i.test(d.title+' '+d.body.textContent.slice(0,1200))?'网站返回了验证页面，当前无法搜索。':s.name+'没有返回可解析的结果，请尝试“一人之下”；若仍为空，可能是网站规则或访问限制。';
 }
 async function openBook(b,resume) {
   const id=++token,s=source(b.source); $('#heading').textContent='正在读取目录…';
@@ -135,7 +143,14 @@ $('#closeDirectory').onclick=()=>$('#directory').close();
 (async()=>{
   try {
     state=await bridge('load')||{sources:[DEFAULT_SOURCE],active:DEFAULT_SOURCE.id,books:[],progress:{},mode:'scroll'};
+    if(!Array.isArray(state.sources)||!state.sources.length)state.sources=[DEFAULT_SOURCE];
+    state.sources=state.sources.map(s=>{
+      if(s.id===DEFAULT_SOURCE.id&&s.baseUrl===DEFAULT_SOURCE.baseUrl&&s.search?.link==='a[href^=/comic.php]')return DEFAULT_SOURCE;
+      return s;
+    });
+    if(!state.sources.some(s=>s.id===state.active))state.active=state.sources[0].id;
     home();
+    await save();
     await window.webkit.messageHandlers.mangeStatus.postMessage({});
   } catch(e) {
     const error=String(e.message||e);
