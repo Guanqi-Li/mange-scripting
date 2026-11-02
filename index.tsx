@@ -1,4 +1,4 @@
-import { Navigation, Script, Storage, WebView, useState } from 'scripting'
+import { Navigation, WebView, useState, fetch } from 'scripting'
 import { html } from './ui'
 
 const controller = new WebViewController()

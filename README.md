@@ -2,14 +2,23 @@
 
 将原 Android Mange 的漫画阅读流程迁移到 iPhone / iPad 的 Scripting App。入口为 TypeScript TSX，界面使用内嵌 WebView，数据保存在 Scripting Storage。
 
-## 在 Scripting 中运行
+## 在 Scripting 中导入
 
-1. 在 Scripting App 中新建名为 `MANGE` 的脚本项目。
-2. 将仓库的 `index.tsx` 和 `ui.ts` 放到该项目根目录；这两个文件就是运行所需文件，不需要 npm 或服务器。
-3. 运行 `index.tsx`，首次运行按 Scripting 提示允许网络访问。
-4. 输入漫画名并搜索，点开结果后加入书架或选章节。下次点书架会继续阅读。
+在「导入远程脚本」中粘贴专用 ZIP 的直链：
 
-`ui.ts` 已包含默认瓜子漫画源。导入源接受 GitHub blob 文件链接（常规分支名）及 Raw HTTPS JSON 链接；私有源仓库认证暂不支持。用户数据不会上传到 GitHub，Android 旧版阅读进度不会自动迁移。
+https://raw.githubusercontent.com/Guanqi-Li/mange-scripting/main/dist/MANGE.zip
+
+也可使用仓库地址：https://github.com/Guanqi-Li/mange-scripting
+
+本仓库根目录和 ZIP 根目录均含 `script.json`，入口为 `index.tsx`。ZIP 仅含运行所需的 `script.json`、`index.tsx`、`ui.ts`，不含开发工具或外层文件夹。若已有手工创建的旧项目，请先保留它的数据，再导入新版。
+
+导入后运行 MANGE；首次按 Scripting 提示允许网络访问。`ui.ts` 已包含默认瓜子漫画源，不需要 npm 或服务器。搜索漫画，点开结果后加入书架或选章节。下次点书架会继续阅读。
+
+导入源接受 GitHub blob 文件链接（常规分支名）及 Raw HTTPS JSON 链接；私有源仓库认证暂不支持。用户数据不会上传到 GitHub，Android 旧版阅读进度不会自动迁移。
+
+## 1.0.1 导入修复
+
+补齐 Scripting `script.json` 元数据，生成与参考脚本相同根目录结构的专用 ZIP；原生宿主的 Storage 和 Script 使用全局 API，fetch 使用 Scripting 导出。此前仅改仓库可见性不足以修复缺失元数据造成的导入问题。
 
 ## 功能
 

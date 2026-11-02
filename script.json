@@ -1,0 +1,22 @@
+{
+  "contributors": [],
+  "permissions": null,
+  "runInApp": true,
+  "localizedNames": {
+    "zh": "MANGE 漫画",
+    "en": "MANGE"
+  },
+  "localizedDescriptions": {
+    "zh": "漫画搜索、书架、导入源与全屏续读。",
+    "en": "Comic search, library, source import and immersive reading."
+  },
+  "icon": "books.vertical",
+  "color": "#236447",
+  "intentInputTypes": [],
+  "description": "Comic search, library, source import and immersive reading.",
+  "iconImage": null,
+  "entry": "index.tsx",
+  "author": null,
+  "name": "MANGE",
+  "version": "1.0.1"
+}
