@@ -29,7 +29,8 @@ const el = (tag, text, cls) => { const e = document.createElement(tag); if (text
 const button = (text, fn) => { const e = el('button', text); e.onclick = () => run(fn); return e; };
 const run = async fn => { try { await fn(); } catch(e) { $('#notice').textContent=String(e.message || e); } };
 const key = b => b.source + '|' + b.url;
-let state, book, current = 0, page = 0, token = 0, pages = [], loading = false, controls = false, restore = null, scrollTimer;
+let state, book, current = 0, page = 0, token = 0, pages = [], loading = false, restore = null, scrollTimer;
+let readerScreen = 'home';
 let saves = Promise.resolve();
 const save = () => { const value = JSON.parse(JSON.stringify(state)); saves = saves.catch(()=>{}).then(()=>bridge('save',{value})); saves.catch(e=>{$('#notice').textContent=String(e)}); return saves; };
 const safeURL = (url, base) => { const u = new URL(url, base); if(u.protocol !== 'https:') throw Error('源中的链接必须使用 HTTPS'); return u.href; };
@@ -66,10 +67,12 @@ function longPress(e, action) {
   e.addEventListener('contextmenu',ev=>{ev.preventDefault();run(action)});
 }
 function home() {
+  cancelReaderTap();
   clearTimeout(scrollTimer);
   token++; book=null; pages=[]; restore=null; loading=false;
   if ($('#directory').open) $('#directory').close();
   $('#reader').hidden=true; $('#pages').replaceChildren(); $('#home').hidden=false;
+  setReaderScreen('home');
   $('#notice').textContent='';
   $('#content').replaceChildren(); $('#heading').textContent='书架';
   const select=$('#sources'); select.replaceChildren();
@@ -178,11 +181,13 @@ async function chapterImages(index) {
 }
 async function read(index,p=0,ratio=0) {
   if(index<0||index>=book.chapters.length)return;
+  cancelReaderTap();
   clearTimeout(scrollTimer);
   const id=++token;loading=true;current=index;page=p;pages=[];restore={p,ratio};
   $('#home').hidden=true;$('#reader').hidden=false;$('#reader').dataset.mode=state.mode;
-  $('#pages').replaceChildren();$('#viewport').scrollTop=0;$('#tail').textContent='正在加载章节…';
-  controls=true;bars();
+  $('#pages').replaceChildren();$('#viewport').scrollTop=0;
+  $('#tail').replaceChildren(el('p','正在加载章节…'));
+  setReaderScreen('reader');
   try {
     const chapter=await chapterImages(index);if(id!==token)return;
     append(chapter,index);
@@ -199,14 +204,14 @@ function append({urls,referer},chapter) {
   const id=token;
   urls.forEach((url,i)=>{
     const wrap=el('div',null,'page');wrap.dataset.chapter=chapter;wrap.dataset.page=i;
-    const img=el('img');img.alt='第 '+(i+1)+' 页';img.loading='lazy';img.referrerPolicy='no-referrer';
+    const img=el('img');img.alt='第 '+(i+1)+' 页';img.loading='lazy';img.referrerPolicy='no-referrer';img.draggable=false;
     const status=el('div',null,'image-status');
     const label='第 '+(i+1)+' 页';
     const entry={chapter,page:i,wrap,img,settled:false};
     let fallback=false;
     const retry=async()=>{
       fallback=true;
-      status.textContent=label+'正在加载…';
+      status.replaceChildren(el('p',label+'正在加载…'));
       try {
         const data=await bridge('image',{url,referer});
         if(id===token){img.loading='eager';img.src=data}
@@ -232,7 +237,7 @@ function append({urls,referer},chapter) {
       else void retry();
     };
     wrap.dataset.pending='';
-    status.textContent=label+'正在加载…';
+    status.append(el('p',label+'正在加载…'));
     wrap.append(img,status);zoom(wrap,img);$('#pages').append(wrap);pages.push(entry);
     img.src=url;
   });
@@ -260,7 +265,19 @@ function remember() {
   const e=pages[page];if(!e?.img.naturalWidth)return;current=e.chapter;
   state.progress[key(book)]={chapter:e.chapter,page:e.page,ratio:Math.max(0,($('#viewport').scrollTop-e.wrap.offsetTop)/Math.max(1,e.wrap.clientHeight))};save();bars();
 }
-function bars(){ $('#bottom').hidden=!controls;$('#title').textContent=book?.chapters[current]?.title||'';$('#prev').disabled=current<=0;$('#next').disabled=!book||current>=book.chapters.length-1; }
+function bars(){
+  $('#top').hidden=$('#bottom').hidden=readerScreen!=='reader-controls';
+  $('#title').textContent=book?.chapters[current]?.title||'';
+  $('#prev').disabled=current<=0;
+  $('#next').disabled=!book||current>=book.chapters.length-1;
+}
+function setReaderScreen(screen){
+  if(readerScreen!==screen){
+    readerScreen=screen;
+    void bridge('screen',{value:screen}).catch(error=>console.error('MANGE screen:',error));
+  }
+  bars();
+}
 async function advance(delta) {
   if(loading)return;
   if(state.mode==='paged') {if(page+delta>=0&&page+delta<pages.length){showPage(page+delta);return}return read(current+delta,delta<0?0:0)}
@@ -285,14 +302,56 @@ function directory(){
   dlg.showModal();
   revealChapter(list,list);
 }
-function zoom(w,img){let pts=new Map(),scale=1,x=0,y=0,start=null,tap=0;
+const doubleTapZoom = new WeakMap();
+let readerTap, pendingTap;
+function cancelReaderTap(){
+  readerTap=null;
+  if(pendingTap)clearTimeout(pendingTap.timer);
+  pendingTap=null;
+}
+function toggleReaderBars(){
+  if(readerScreen!=='home')setReaderScreen(readerScreen==='reader'?'reader-controls':'reader');
+}
+const viewport=$('#viewport');
+viewport.onpointerdown=e=>{
+  if(!e.isPrimary||e.button!==0||e.target.closest('button')){
+    cancelReaderTap();
+    return;
+  }
+  readerTap={id:e.pointerId,x:e.clientX,y:e.clientY,time:Date.now(),target:e.target};
+};
+viewport.onpointermove=e=>{
+  if(readerTap?.id===e.pointerId&&Math.hypot(e.clientX-readerTap.x,e.clientY-readerTap.y)>10)readerTap=null;
+};
+viewport.onpointercancel=cancelReaderTap;
+viewport.onpointerup=e=>{
+  const tap=readerTap;
+  readerTap=null;
+  if(!tap||tap.id!==e.pointerId||Date.now()-tap.time>=350||Math.hypot(e.clientX-tap.x,e.clientY-tap.y)>10)return;
+  const zoom=doubleTapZoom.get(tap.target);
+  if(!zoom){
+    cancelReaderTap();
+    toggleReaderBars();
+  }else if(pendingTap?.target===tap.target){
+    cancelReaderTap();
+    zoom();
+  }else{
+    cancelReaderTap();
+    pendingTap={target:tap.target,timer:setTimeout(()=>{
+      pendingTap=null;
+      toggleReaderBars();
+    },300)};
+  }
+};
+function zoom(w,img){let pts=new Map(),scale=1,x=0,y=0,start=null;
  const apply=()=>{x=Math.min(0,Math.max(w.clientWidth*(1-scale),x));y=Math.min(0,Math.max(w.clientHeight*(1-scale),y));img.style.transform=`translate(${x}px,${y}px) scale(${scale})`;w.style.touchAction=scale>1?'none':'pan-y'};
- w.onpointerdown=e=>{if(e.target!==img)return;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});if(scale>1||pts.size>1)w.setPointerCapture(e.pointerId);if(pts.size===1)start={x:e.clientX,y:e.clientY,time:Date.now(),moved:false};};
- w.onpointermove=e=>{if(!pts.has(e.pointerId))return;const old=pts.get(e.pointerId),others=[...pts.entries()].filter(([id])=>id!==e.pointerId);if(start&&Math.hypot(e.clientX-start.x,e.clientY-start.y)>10)start.moved=true;
+ doubleTapZoom.set(img,()=>{scale=scale>1?1:2;x=scale===1?0:-w.clientWidth/2;y=scale===1?0:-w.clientHeight/2;apply()});
+ w.onpointerdown=e=>{if(e.target!==img)return;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});if(scale>1||pts.size>1)w.setPointerCapture(e.pointerId);if(pts.size===1)start={x:e.clientX,y:e.clientY};};
+ w.onpointermove=e=>{if(!pts.has(e.pointerId))return;const old=pts.get(e.pointerId),others=[...pts.entries()].filter(([id])=>id!==e.pointerId);
  if(others.length){const a=others[0][1],before=Math.hypot(old.x-a.x,old.y-a.y),after=Math.hypot(e.clientX-a.x,e.clientY-a.y);const next=Math.max(1,Math.min(4,scale*after/Math.max(before,1))),r=next/scale,rect=w.getBoundingClientRect(),px=(e.clientX+a.x)/2-rect.left,py=(e.clientY+a.y)/2-rect.top;x=px-(px-x)*r;y=py-(py-y)*r;scale=next;apply();e.preventDefault()}else if(scale>1){x+=e.clientX-old.x;y+=e.clientY-old.y;apply();e.preventDefault()}pts.set(e.pointerId,{x:e.clientX,y:e.clientY});};
  w.onpointerup=e=>{const multi=pts.size>1;pts.delete(e.pointerId);if(multi){start=null;return}if(!start)return;const dx=e.clientX-start.x,dy=e.clientY-start.y;
  if(scale===1&&state.mode==='paged'&&Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5)run(()=>advance(dx<0?1:-1));
- else if(!start.moved&&Date.now()-start.time<350){if(Date.now()-tap<300){scale=scale>1?1:2;x=scale===1?0:-w.clientWidth/2;y=scale===1?0:-w.clientHeight/2;apply();tap=0}else{tap=Date.now();setTimeout(()=>{if(tap&&Date.now()-tap>=280){controls=!controls;bars()}},300)}}start=null;};w.onpointercancel=e=>{pts.delete(e.pointerId);start=null};
+ start=null;};w.onpointercancel=e=>{pts.delete(e.pointerId);start=null};
 }
 $('#queryform').onsubmit=e=>{e.preventDefault();run(search)};$('#import').onclick=()=>run(importSource);$('#shelf').onclick=home;
 $('#sources').onchange=()=>{state.active=$('#sources').value;save()};$('#removeSource').onclick=()=>run(async()=>{if(state.sources.length<2)throw Error('最后一个源不可删除');if(confirm('删除当前源？')){state.sources=state.sources.filter(s=>s.id!==state.active);state.active=state.sources[0].id;await save();home()}});

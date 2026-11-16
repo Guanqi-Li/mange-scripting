@@ -2,9 +2,15 @@ import { Navigation, NavigationStack, EnvironmentValuesReader, Script, WebView, 
 import { html } from './ui'
 
 type Message = { id?: string, op: string, url?: string, referer?: string, value?: unknown }
+type Screen = 'home' | 'reader' | 'reader-controls'
 
-async function handleMessage(p: Message) {
+async function handleMessage(p: Message, setScreen: (screen: Screen) => void) {
   try {
+    if (p.op === 'screen') {
+      if (p.value !== 'home' && p.value !== 'reader' && p.value !== 'reader-controls') throw new Error('未知界面状态')
+      setScreen(p.value)
+      return { value: true }
+    }
     if (p.op === 'load') return { value: Storage.get('mange.v1') ?? null }
     if (p.op === 'save') {
       if (!Storage.set('mange.v1', p.value)) throw new Error('本地保存失败')
@@ -41,6 +47,9 @@ async function handleMessage(p: Message) {
 function App({ scheme }: { scheme: string }) {
   const surface = scheme === 'dark' ? '#000000' : '#F2F2F7'
   const controller = useMemo(() => new WebViewController(), [])
+  const [screen, setScreen] = useState<Screen>('home')
+  const reading = screen !== 'home'
+  const immersive = screen === 'reader'
   const [status, setStatus] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
@@ -53,7 +62,7 @@ function App({ scheme }: { scheme: string }) {
         await controller.addScriptMessageHandler('mange', async incoming => {
           const p = (typeof incoming === 'string' ? JSON.parse(incoming) : incoming) as Message
           if (!p || typeof p.id !== 'string') throw new Error('脚本请求缺少编号')
-          const result = await handleMessage(p)
+          const result = await handleMessage(p, setScreen)
           if (active) {
             try {
               await controller.evaluateJavaScript(`window.__mangeReply(${JSON.stringify(p.id)}, ${JSON.stringify(result)}); return true`)
@@ -97,18 +106,21 @@ function App({ scheme }: { scheme: string }) {
         }
       }} /> : undefined
   }
-  return <NavigationStack background={{ style: surface, shape: 'rect' }} statusBarHidden={false}
-    persistentSystemOverlays="visible"
+  return <NavigationStack background={{ style: immersive ? '#000000' : surface, shape: 'rect' }} statusBarHidden={immersive}
+    persistentSystemOverlays={immersive ? 'hidden' : 'visible'}
     toolbarBackground={{ style: surface, bars: ['navigationBar'] }}
     toolbarBackgroundVisibility={{ visibility: 'visible', bars: ['navigationBar'] }}>
     <VStack spacing={0} background={{ style: surface, shape: 'rect' }} navigationTitle="MANGE"
       navigationBarTitleDisplayMode="inline" toolbar={toolbar}
+      toolbarVisibility={{ visibility: reading ? 'hidden' : 'visible', bars: ['navigationBar'] }}
       toolbarBackground={{ style: surface, bars: ['navigationBar'] }}
-      toolbarBackgroundVisibility={{ visibility: 'visible', bars: ['navigationBar'] }}>
-      <WebView controller={controller} background={surface} frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }} />
+      toolbarBackgroundVisibility={{ visibility: 'visible', bars: ['navigationBar'] }}
+      ignoresSafeArea={immersive}>
+      <WebView controller={controller} background={reading ? '#000000' : surface}
+        frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }} />
       {status !== '' ? <VStack padding={16}>
         <Text>{status ?? '正在启动 MANGE…'}</Text>
-        {status ? <Button title="重试启动" action={() => setAttempt(attempt + 1)} /> : null}
+        {status ? <Button title="重试启动" action={() => { setScreen('home'); setAttempt(attempt + 1) }} /> : null}
       </VStack> : null}
     </VStack>
   </NavigationStack>
