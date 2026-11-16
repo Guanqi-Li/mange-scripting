@@ -272,9 +272,11 @@ function bars(){
   $('#next').disabled=!book||current>=book.chapters.length-1;
 }
 function setReaderScreen(screen){
-  if(readerScreen!==screen){
-    readerScreen=screen;
-    void bridge('screen',{value:screen}).catch(error=>console.error('MANGE screen:',error));
+  const wasHome=readerScreen==='home';
+  readerScreen=screen;
+  const isHome=screen==='home';
+  if(wasHome!==isHome){
+    void bridge('screen',{value:isHome?'home':'reader'}).catch(error=>console.error('MANGE screen:',error));
   }
   bars();
 }

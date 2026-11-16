@@ -2,12 +2,12 @@ import { Navigation, NavigationStack, EnvironmentValuesReader, Script, WebView, 
 import { html } from './ui'
 
 type Message = { id?: string, op: string, url?: string, referer?: string, value?: unknown }
-type Screen = 'home' | 'reader' | 'reader-controls'
+type Screen = 'home' | 'reader'
 
 async function handleMessage(p: Message, setScreen: (screen: Screen) => void) {
   try {
     if (p.op === 'screen') {
-      if (p.value !== 'home' && p.value !== 'reader' && p.value !== 'reader-controls') throw new Error('未知界面状态')
+      if (p.value !== 'home' && p.value !== 'reader') throw new Error('未知界面状态')
       setScreen(p.value)
       return { value: true }
     }
@@ -48,8 +48,7 @@ function App({ scheme }: { scheme: string }) {
   const surface = scheme === 'dark' ? '#000000' : '#F2F2F7'
   const controller = useMemo(() => new WebViewController(), [])
   const [screen, setScreen] = useState<Screen>('home')
-  const reading = screen !== 'home'
-  const immersive = screen === 'reader'
+  const reading = screen === 'reader'
   const [status, setStatus] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
@@ -106,8 +105,8 @@ function App({ scheme }: { scheme: string }) {
         }
       }} /> : undefined
   }
-  return <NavigationStack background={{ style: immersive ? '#000000' : surface, shape: 'rect' }} statusBarHidden={immersive}
-    persistentSystemOverlays={immersive ? 'hidden' : 'visible'}
+  return <NavigationStack background={{ style: reading ? '#000000' : surface, shape: 'rect' }} statusBarHidden={reading}
+    persistentSystemOverlays={reading ? 'hidden' : 'visible'}
     toolbarBackground={{ style: surface, bars: ['navigationBar'] }}
     toolbarBackgroundVisibility={{ visibility: 'visible', bars: ['navigationBar'] }}>
     <VStack spacing={0} background={{ style: surface, shape: 'rect' }} navigationTitle="MANGE"
@@ -115,7 +114,7 @@ function App({ scheme }: { scheme: string }) {
       toolbarVisibility={{ visibility: reading ? 'hidden' : 'visible', bars: ['navigationBar'] }}
       toolbarBackground={{ style: surface, bars: ['navigationBar'] }}
       toolbarBackgroundVisibility={{ visibility: 'visible', bars: ['navigationBar'] }}
-      ignoresSafeArea={immersive}>
+      ignoresSafeArea={reading}>
       <WebView controller={controller} background={reading ? '#000000' : surface}
         frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }} />
       {status !== '' ? <VStack padding={16}>
