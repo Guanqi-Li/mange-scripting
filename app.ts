@@ -29,7 +29,7 @@ const el = (tag, text, cls) => { const e = document.createElement(tag); if (text
 const button = (text, fn) => { const e = el('button', text); e.onclick = () => run(fn); return e; };
 const run = async fn => { try { await fn(); } catch(e) { $('#notice').textContent=String(e.message || e); } };
 const key = b => b.source + '|' + b.url;
-let state, book, current = 0, page = 0, token = 0, pages = [], loading = false, controls = false, restore = null;
+let state, book, current = 0, page = 0, token = 0, pages = [], loading = false, controls = false, restore = null, scrollTimer;
 let saves = Promise.resolve();
 const save = () => { const value = JSON.parse(JSON.stringify(state)); saves = saves.catch(()=>{}).then(()=>bridge('save',{value})); saves.catch(e=>{$('#notice').textContent=String(e)}); return saves; };
 const safeURL = (url, base) => { const u = new URL(url, base); if(u.protocol !== 'https:') throw Error('源中的链接必须使用 HTTPS'); return u.href; };
@@ -66,12 +66,17 @@ function longPress(e, action) {
   e.addEventListener('contextmenu',ev=>{ev.preventDefault();run(action)});
 }
 function home() {
-  token++; book=null; bridge('reading',{value:false}); $('#reader').hidden=true; $('#home').hidden=false;
+  clearTimeout(scrollTimer);
+  token++; book=null; pages=[]; restore=null; loading=false;
+  if ($('#directory').open) $('#directory').close();
+  $('#reader').hidden=true; $('#pages').replaceChildren(); $('#home').hidden=false;
+  $('#notice').textContent='';
   $('#content').replaceChildren(); $('#heading').textContent='书架';
   const select=$('#sources'); select.replaceChildren();
   for(const s of state.sources) { const o=el('option',s.name); o.value=s.id; o.selected=s.id===state.active; select.append(o); }
   for(const b of state.books) card(b,true);
   if(!state.books.length) $('#content').append(el('p','书架还是空的，搜索漫画后加入书架。','empty'));
+  window.scrollTo(0,0);
 }
 function card(b,shelf) {
   const c=el('article',null,'card'), img=el('img'); img.src=b.cover; img.alt=b.title; img.loading='lazy';
@@ -138,57 +143,151 @@ async function openBook(b,resume) {
   if(resume)return read(current,progress?.page||0,progress?.ratio||0);
   $('#content').replaceChildren();$('#heading').textContent=b.title;
   $('#content').append(button('← 书架',home),button('加入书架',async()=>{if(!state.books.some(x=>key(x)===key(b))){state.books.push(b);await save()}alert('已加入书架')}),button('继续阅读',()=>read(current,progress?.page||0,progress?.ratio||0)));
-  const list=el('div',null,'chapters'); book.chapters.forEach((c,i)=>{const a=button((i===current?'▶ ':'')+c.title,()=>read(i)); if(i===current)a.className='selected';list.append(a)});$('#content').append(list);list.children[current]?.scrollIntoView({block:'start'});
+  const list=chapterButtons(el('div',null,'chapters'), '▶ ', read);
+  $('#content').append(list);
+  revealChapter(list, document.scrollingElement, $('#home header'));
+}
+function chapterButtons(list, prefix, select) {
+  list.replaceChildren(...book.chapters.map((chapter, index) => {
+    const selected = index === current;
+    const row = button((selected ? prefix : '') + chapter.title, () => select(index));
+    if (selected) {
+      row.className = 'selected';
+      row.setAttribute('aria-current', 'true');
+    }
+    return row;
+  }));
+  return list;
+}
+function revealChapter(list, scroller, header) {
+  requestAnimationFrame(() => {
+    const row = list.querySelector('[aria-current]');
+    if (!row?.getClientRects().length) return;
+    const bounds = row.getBoundingClientRect();
+    const top = header ? header.getBoundingClientRect().bottom : scroller.getBoundingClientRect().top;
+    const bottom = header ? scroller.clientHeight : top + scroller.clientHeight;
+    if (bounds.top >= top && bounds.bottom <= bottom) return;
+    scroller.scrollTop += (bounds.top + bounds.bottom - top - bottom) / 2;
+  });
 }
 async function chapterImages(index) {
   const s=source(book.source),url=book.chapters[index].url,d=await doc(url);
-  const urls=Array.from(d.querySelectorAll(s.reader.images)).map(e=>e.getAttribute(s.reader.imageAttr||'src')).filter(Boolean).map(u=>safeURL(u,url));
-  if(!urls.length)throw Error('没有解析到图片，请检查源或网站访问限制'); return urls;
+  const urls=Array.from(d.querySelectorAll(s.reader.images)).map(e=>e.getAttribute(s.reader.imageAttr||'src')).filter(Boolean).map(u=>safeURL(u,d.mangeURL));
+  if(!urls.length)throw Error('没有解析到图片，请检查源或网站访问限制');
+  return {urls, referer: d.mangeURL};
 }
 async function read(index,p=0,ratio=0) {
   if(index<0||index>=book.chapters.length)return;
+  clearTimeout(scrollTimer);
   const id=++token;loading=true;current=index;page=p;pages=[];restore={p,ratio};
-  $('#home').hidden=true;$('#reader').hidden=false;$('#reader').dataset.mode=state.mode;$('#pages').replaceChildren();$('#tail').textContent='正在加载…';
-  controls=false;bars();await bridge('reading',{value:true});
-  try { const urls=await chapterImages(index);if(id!==token)return; append(urls,index);pages.slice(0,p+1).forEach(e=>e.img.loading='eager');if(state.mode==='paged')showPage(p);else restorePosition();$('#tail').textContent=''; }
-  catch(e){if(id===token){$('#tail').replaceChildren(button('加载失败，点击重试',()=>read(index,p,ratio)));throw e}}
+  $('#home').hidden=true;$('#reader').hidden=false;$('#reader').dataset.mode=state.mode;
+  $('#pages').replaceChildren();$('#viewport').scrollTop=0;$('#tail').textContent='正在加载章节…';
+  controls=true;bars();
+  try {
+    const chapter=await chapterImages(index);if(id!==token)return;
+    append(chapter,index);
+    if(state.mode==='paged')showPage(p,true);
+    else pages.slice(0,p+1).forEach(e=>e.img.loading='eager');
+    restorePosition();
+    $('#tail').textContent='';
+  } catch(e) {
+    if(id===token)$('#tail').replaceChildren(el('p','章节加载失败：'+String(e.message||e)),button('重试',()=>read(index,p,ratio)));
+  }
   finally{if(id===token)loading=false}
 }
-function append(urls,chapter) {
+function append({urls,referer},chapter) {
+  const id=token;
   urls.forEach((url,i)=>{
     const wrap=el('div',null,'page');wrap.dataset.chapter=chapter;wrap.dataset.page=i;
-    const img=el('img');img.src=url;img.alt='第 '+(i+1)+' 页';img.loading=state.mode==='paged'?'eager':'lazy';img.referrerPolicy='no-referrer';
-    img.onload=()=>{if(restore)restorePosition()};let fallback=false;
-    const retry=async()=>{img.src=await bridge('image',{url,referer:book.chapters[chapter].url})};
-    img.onerror=()=>{img.alt='图片加载失败，点击重试';if(!fallback){fallback=true;retry().catch(()=>{})}wrap.onclick=()=>run(retry)};
-    wrap.append(img);zoom(wrap,img);$('#pages').append(wrap);pages.push({chapter,page:i,wrap,img});
+    const img=el('img');img.alt='第 '+(i+1)+' 页';img.loading='lazy';img.referrerPolicy='no-referrer';
+    const status=el('div',null,'image-status');
+    const label='第 '+(i+1)+' 页';
+    const entry={chapter,page:i,wrap,img,settled:false};
+    let fallback=false;
+    const retry=async()=>{
+      fallback=true;
+      status.textContent=label+'正在加载…';
+      try {
+        const data=await bridge('image',{url,referer});
+        if(id===token){img.loading='eager';img.src=data}
+      } catch(e) {
+        if(id===token)failed(String(e.message||e));
+      }
+    };
+    const failed=message=>{
+      entry.settled=true;
+      status.replaceChildren(el('p',label+'加载失败：'+message),button('重试图片',retry));
+      restorePosition();
+    };
+    img.onload=()=>{
+      if(id!==token)return;
+      entry.settled=true;
+      delete wrap.dataset.pending;
+      if(restore)restorePosition();
+      else if(state.mode==='paged'&&pages[page]===entry)remember();
+    };
+    img.onerror=()=>{
+      if(id!==token)return;
+      if(fallback)failed('收到的图片无法显示');
+      else void retry();
+    };
+    wrap.dataset.pending='';
+    status.textContent=label+'正在加载…';
+    wrap.append(img,status);zoom(wrap,img);$('#pages').append(wrap);pages.push(entry);
+    img.src=url;
   });
 }
-function restorePosition(){if(!restore)return;const e=pages[Math.min(restore.p,pages.length-1)];if(!e||!pages.slice(0,restore.p+1).every(e=>e.img.complete))return;
-  const r=restore;restore=null;$('#viewport').scrollTop=e.wrap.offsetTop+r.ratio*e.wrap.clientHeight;
+function restorePosition(){
+  if(!restore)return;
+  const index=Math.min(restore.p,pages.length-1), e=pages[index];
+  if(!e)return;
+  const ready=state.mode==='paged'?e.settled:pages.slice(0,index+1).every(p=>p.settled);
+  if(!ready)return;
+  const {ratio}=restore;restore=null;page=index;
+  $('#viewport').scrollTop=e.wrap.offsetTop+ratio*e.wrap.clientHeight;
+  if(e.img.naturalWidth)remember();
 }
-function showPage(p) {page=Math.max(0,Math.min(p,pages.length-1));pages.forEach((e,i)=>e.wrap.hidden=i!==page);$('#viewport').scrollTop=0;remember();}
+function showPage(p, restoring=false) {
+  if(!restoring)restore=null;
+  page=Math.max(0,Math.min(p,pages.length-1));
+  pages.forEach((e,i)=>e.wrap.hidden=i!==page);
+  pages[page].img.loading='eager';
+  $('#viewport').scrollTop=0;
+  if(!restoring)remember();
+}
 function remember() {
   if(!book||restore||!pages.length)return;
-  const e=pages[page];if(!e)return;current=e.chapter;
+  const e=pages[page];if(!e?.img.naturalWidth)return;current=e.chapter;
   state.progress[key(book)]={chapter:e.chapter,page:e.page,ratio:Math.max(0,($('#viewport').scrollTop-e.wrap.offsetTop)/Math.max(1,e.wrap.clientHeight))};save();bars();
 }
-function bars(){ $('#top').hidden=$('#bottom').hidden=!controls;$('#title').textContent=book?.chapters[current]?.title||'';$('#prev').disabled=current<=0;$('#next').disabled=!book||current>=book.chapters.length-1; }
+function bars(){ $('#bottom').hidden=!controls;$('#title').textContent=book?.chapters[current]?.title||'';$('#prev').disabled=current<=0;$('#next').disabled=!book||current>=book.chapters.length-1; }
 async function advance(delta) {
   if(loading)return;
   if(state.mode==='paged') {if(page+delta>=0&&page+delta<pages.length){showPage(page+delta);return}return read(current+delta,delta<0?0:0)}
   return read(current+delta);
 }
-let scrollTimer;
 $('#viewport').onscroll=()=>{
-  clearTimeout(scrollTimer);scrollTimer=setTimeout(()=>{if(state.mode!=='paged'&&!restore){const y=$('#viewport').scrollTop+50;let i=pages.findIndex(e=>e.wrap.offsetTop+e.wrap.clientHeight>y);if(i>=0){page=i;remember()}}},200);
+  clearTimeout(scrollTimer);scrollTimer=setTimeout(()=>{
+    if($('#reader').hidden||restore||!pages.length)return;
+    if(state.mode==='scroll'){
+      const y=$('#viewport').scrollTop+50;
+      const i=pages.findIndex(e=>e.wrap.offsetTop+e.wrap.clientHeight>y);
+      if(i>=0)page=i;
+    }
+    remember();
+  },200);
   if(state.mode==='scroll'&&!loading&&!restore&&pages.length&&$('#viewport').scrollTop+$('#viewport').clientHeight>$('#viewport').scrollHeight-1200)run(loadNext);
 };
-async function loadNext(){const ch=pages.at(-1).chapter+1;if(ch>=book.chapters.length)return;const id=token;loading=true;$('#tail').textContent='预加载下一章…';try{const urls=await chapterImages(ch);if(id===token){append(urls,ch);$('#tail').textContent=''}}catch(e){if(id===token)$('#tail').replaceChildren(button('下一章加载失败，点击重试',loadNext))}finally{if(id===token)loading=false}}
-function directory(){const dlg=$('#directory'),list=$('#chapterlist');list.replaceChildren();book.chapters.forEach((c,i)=>{const b=button((i===current?'▶ 正在阅读 · ':'')+c.title,()=>{dlg.close();return read(i)});if(i===current)b.className='selected';list.append(b)});dlg.showModal();list.children[current]?.scrollIntoView({block:'start'});}
+async function loadNext(){const ch=pages.at(-1).chapter+1;if(ch>=book.chapters.length)return;const id=token;loading=true;$('#tail').textContent='预加载下一章…';try{const chapter=await chapterImages(ch);if(id===token){append(chapter,ch);$('#tail').textContent=''}}catch(e){if(id===token)$('#tail').replaceChildren(button('下一章加载失败，点击重试',loadNext))}finally{if(id===token)loading=false}}
+function directory(){
+  const dlg=$('#directory'),list=$('#chapterlist');
+  chapterButtons(list,'▶ 正在阅读 · ',i=>{dlg.close();return read(i)});
+  dlg.showModal();
+  revealChapter(list,list);
+}
 function zoom(w,img){let pts=new Map(),scale=1,x=0,y=0,start=null,tap=0;
  const apply=()=>{x=Math.min(0,Math.max(w.clientWidth*(1-scale),x));y=Math.min(0,Math.max(w.clientHeight*(1-scale),y));img.style.transform=`translate(${x}px,${y}px) scale(${scale})`;w.style.touchAction=scale>1?'none':'pan-y'};
- w.onpointerdown=e=>{pts.set(e.pointerId,{x:e.clientX,y:e.clientY});if(scale>1||pts.size>1)w.setPointerCapture(e.pointerId);if(pts.size===1)start={x:e.clientX,y:e.clientY,time:Date.now(),moved:false};};
+ w.onpointerdown=e=>{if(e.target!==img)return;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});if(scale>1||pts.size>1)w.setPointerCapture(e.pointerId);if(pts.size===1)start={x:e.clientX,y:e.clientY,time:Date.now(),moved:false};};
  w.onpointermove=e=>{if(!pts.has(e.pointerId))return;const old=pts.get(e.pointerId),others=[...pts.entries()].filter(([id])=>id!==e.pointerId);if(start&&Math.hypot(e.clientX-start.x,e.clientY-start.y)>10)start.moved=true;
  if(others.length){const a=others[0][1],before=Math.hypot(old.x-a.x,old.y-a.y),after=Math.hypot(e.clientX-a.x,e.clientY-a.y);const next=Math.max(1,Math.min(4,scale*after/Math.max(before,1))),r=next/scale,rect=w.getBoundingClientRect(),px=(e.clientX+a.x)/2-rect.left,py=(e.clientY+a.y)/2-rect.top;x=px-(px-x)*r;y=py-(py-y)*r;scale=next;apply();e.preventDefault()}else if(scale>1){x+=e.clientX-old.x;y+=e.clientY-old.y;apply();e.preventDefault()}pts.set(e.pointerId,{x:e.clientX,y:e.clientY});};
  w.onpointerup=e=>{const multi=pts.size>1;pts.delete(e.pointerId);if(multi){start=null;return}if(!start)return;const dx=e.clientX-start.x,dy=e.clientY-start.y;
@@ -198,7 +297,13 @@ function zoom(w,img){let pts=new Map(),scale=1,x=0,y=0,start=null,tap=0;
 $('#queryform').onsubmit=e=>{e.preventDefault();run(search)};$('#import').onclick=()=>run(importSource);$('#shelf').onclick=home;
 $('#sources').onchange=()=>{state.active=$('#sources').value;save()};$('#removeSource').onclick=()=>run(async()=>{if(state.sources.length<2)throw Error('最后一个源不可删除');if(confirm('删除当前源？')){state.sources=state.sources.filter(s=>s.id!==state.active);state.active=state.sources[0].id;await save();home()}});
 $('#back').onclick=()=>{remember();home()};$('#prev').onclick=()=>run(()=>read(current-1));$('#next').onclick=()=>run(()=>read(current+1));$('#catalog').onclick=directory;
-$('#mode').onclick=()=>run(async()=>{remember();const p=state.progress[key(book)];state.mode=state.mode==='scroll'?'paged':'scroll';await save();await read(p.chapter,p.page,p.ratio)});
+$('#mode').onclick=()=>run(()=>{
+  remember();
+  const p=pages[page], ratio=restore?.ratio??state.progress[key(book)]?.ratio??0;
+  state.mode=state.mode==='scroll'?'paged':'scroll';
+  void save();
+  return read(p?.chapter??current,p?.page??page,ratio);
+});
 $('#closeDirectory').onclick=()=>$('#directory').close();
 (async()=>{
   try {
@@ -210,8 +315,8 @@ $('#closeDirectory').onclick=()=>$('#directory').close();
     });
     if(!state.sources.some(s=>s.id===state.active))state.active=state.sources[0].id;
     home();
-    await save();
     await window.webkit.messageHandlers.mangeStatus.postMessage({});
+    void save();
   } catch(e) {
     const error=String(e.message||e);
     $('#notice').textContent='启动失败：'+error;

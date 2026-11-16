@@ -3,17 +3,19 @@ import { html } from './ui'
 
 type Message = { id?: string, op: string, url?: string, referer?: string, value?: unknown }
 
-async function handleMessage(p: Message, setReading: (value: boolean) => void) {
+async function handleMessage(p: Message) {
   try {
     if (p.op === 'load') return { value: Storage.get('mange.v1') ?? null }
     if (p.op === 'save') {
       if (!Storage.set('mange.v1', p.value)) throw new Error('本地保存失败')
       return { value: true }
     }
-    if (p.op === 'reading') { setReading(Boolean(p.value)); return { value: true } }
     if (p.op === 'fetch' || p.op === 'document' || p.op === 'image') {
       if (!p.url || !/^https:\/\//i.test(p.url)) throw new Error('仅支持 HTTPS 地址')
-      const response = await fetch(p.url, { headers: { 'User-Agent': 'Mange/1.0 (Android comic reader)', ...(p.referer ? { Referer: p.referer } : {}) } })
+      const response = await fetch(p.url, {
+        timeout: 20,
+        headers: { 'User-Agent': 'Mange/1.0 (Android comic reader)', ...(p.referer ? { Referer: p.referer } : {}) }
+      })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       if (p.op === 'image') {
         const data = await response.data()
@@ -33,31 +35,30 @@ async function handleMessage(p: Message, setReading: (value: boolean) => void) {
       return { value: await response.text() }
     }
     throw new Error('未知操作')
-  } catch (error) { return { error: String(error) } }
+  } catch (error) { return { error: error instanceof Error ? error.message : String(error) } }
 }
 
 function App({ scheme }: { scheme: string }) {
   const surface = scheme === 'dark' ? '#000000' : '#F2F2F7'
   const controller = useMemo(() => new WebViewController(), [])
-  const [reading, setReading] = useState(false)
-  const [status, setStatus] = useState('正在启动 MANGE…')
+  const [status, setStatus] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     let active = true
     let timer: ReturnType<typeof setTimeout> | undefined
     async function initialize() {
       try {
-        setStatus('正在启动 MANGE…')
+        setStatus(null)
         timer = setTimeout(() => { if (active) setStatus('启动超时。请点重试；若仍失败，请将此提示发给开发者。') }, 15000)
         await controller.addScriptMessageHandler('mange', async incoming => {
           const p = (typeof incoming === 'string' ? JSON.parse(incoming) : incoming) as Message
           if (!p || typeof p.id !== 'string') throw new Error('脚本请求缺少编号')
-          const result = await handleMessage(p, setReading)
+          const result = await handleMessage(p)
           if (active) {
             try {
               await controller.evaluateJavaScript(`window.__mangeReply(${JSON.stringify(p.id)}, ${JSON.stringify(result)}); return true`)
             } catch (error) {
-              setStatus(`通信回调失败：${String(error)}`)
+              console.error('MANGE bridge:', String(error))
             }
           }
           return true
@@ -81,38 +82,35 @@ function App({ scheme }: { scheme: string }) {
   }, [attempt])
   useEffect(() => () => controller.dispose(), [])
   useEffect(() => {
-    if (!status) controller.evaluateJavaScript(`document.documentElement.dataset.nativeTheme = ${JSON.stringify(scheme)}; return true`).catch(() => {})
+    if (status === '') controller.evaluateJavaScript(`document.documentElement.dataset.nativeTheme = ${JSON.stringify(scheme)}; return true`).catch(() => {})
   }, [scheme, status])
   const toolbar = {
     cancellationAction: <Button title="退出" systemImage="xmark" action={() => Script.exit()} />,
     primaryAction: Script.supportsMinimization() ? <Button title="最小化"
       systemImage="arrow.down.right.and.arrow.up.left"
-      action={() => {
-        Script.minimize().then(success => {
-          if (!success) setStatus('当前环境无法最小化，请稍后重试。')
-        }).catch(error => setStatus(`最小化失败：${String(error)}`))
+      action={async () => {
+        try {
+          if (await Script.minimize()) return
+          await Dialog.alert({ message: '当前环境无法最小化，请稍后重试。' })
+        } catch (error) {
+          await Dialog.alert({ message: `最小化失败：${String(error)}` })
+        }
       }} /> : undefined
   }
-  const content = <VStack spacing={0} background={{ style: reading ? '#000000' : surface, shape: 'rect' }} navigationTitle="MANGE" navigationBarTitleDisplayMode="inline"
-    toolbar={reading ? undefined : toolbar}
-    toolbarBackground={{ style: surface, bars: ['navigationBar'] }}
-    toolbarBackgroundVisibility={{ visibility: 'visible', bars: ['navigationBar'] }}
-    toolbarVisibility={{ visibility: reading ? 'hidden' : 'visible', bars: ['navigationBar'] }}
-    statusBarHidden={reading}
-    persistentSystemOverlays={reading ? 'hidden' : 'visible'}
-    ignoresSafeArea={reading}>
-    {status ? <VStack padding={16}>
-      <Text>{status}</Text>
-      <Button title="重试启动" action={() => setAttempt(attempt + 1)} />
-    </VStack> : null}
-    <WebView controller={controller} ignoresSafeArea={reading} background={reading ? '#000000' : surface} frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }} />
-  </VStack>
-  // The reader must not inherit navigation-stack layout or its reserved safe areas.
-  if (reading) return content
-  return <NavigationStack background={{ style: surface, shape: 'rect' }}
+  return <NavigationStack background={{ style: surface, shape: 'rect' }} statusBarHidden={false}
+    persistentSystemOverlays="visible"
     toolbarBackground={{ style: surface, bars: ['navigationBar'] }}
     toolbarBackgroundVisibility={{ visibility: 'visible', bars: ['navigationBar'] }}>
-    {content}
+    <VStack spacing={0} background={{ style: surface, shape: 'rect' }} navigationTitle="MANGE"
+      navigationBarTitleDisplayMode="inline" toolbar={toolbar}
+      toolbarBackground={{ style: surface, bars: ['navigationBar'] }}
+      toolbarBackgroundVisibility={{ visibility: 'visible', bars: ['navigationBar'] }}>
+      <WebView controller={controller} background={surface} frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }} />
+      {status !== '' ? <VStack padding={16}>
+        <Text>{status ?? '正在启动 MANGE…'}</Text>
+        {status ? <Button title="重试启动" action={() => setAttempt(attempt + 1)} /> : null}
+      </VStack> : null}
+    </VStack>
   </NavigationStack>
 }
 
@@ -123,7 +121,10 @@ async function main() {
     </EnvironmentValuesReader>, modalPresentationStyle: 'fullScreen' })
   } catch (error) {
     console.error('MANGE startup:', String(error))
-    await Navigation.present({ element: <VStack padding={20}><Text>MANGE 启动失败：{String(error)}</Text></VStack> })
+    await Navigation.present({ element: <VStack padding={20}>
+      <Text>MANGE 启动失败：{String(error)}</Text>
+      <Button title="退出" action={() => Script.exit()} />
+    </VStack> })
   } finally { Script.exit() }
 }
 main()
